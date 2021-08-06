@@ -149,13 +149,17 @@ Exec_mariner()
 
 Configure_NMI()
 {
-    sysctl -w kernel.unknown_nmi_panic=1
-    if [ $? -ne 0 ]; then
-        LogErr "Failed to enable kernel to call panic when it receives a NMI."
-        SetTestStateAborted
-        exit 0
+    if [ -e "/proc/sys/kernel/unknown_nmi_panic" ] ; then
+        sysctl -w kernel.unknown_nmi_panic=1
+        if [ $? -ne 0 ]; then
+            LogErr "Failed to enable kernel to call panic when it receives a NMI."
+            SetTestStateAborted
+            exit 0
+        else
+            UpdateSummary "Success: enabling kernel to call panic when it receives a NMI."
+        fi
     else
-        UpdateSummary "Success: enabling kernel to call panic when it receives a NMI."
+        UpdateSummary "The kernel doesn't support to call panic when it receives a NMI."
     fi
 }
 
