@@ -1240,14 +1240,13 @@ class AzurePlatform(Platform):
             memory_mb=0,
             nic_count=0,
             gpu_count=0,
+            nvme_count=0,
             features=search_space.SetSpace[str](is_allow_set=True),
             excluded_features=search_space.SetSpace[str](is_allow_set=False),
         )
         node_space.name = f"{location}_{resource_sku.name}"
         node_space.features = search_space.SetSpace[str](is_allow_set=True)
         for sku_capability in resource_sku.capabilities:
-            if resource_sku.family in ["standardLSv2Family"]:
-                node_space.features.update([features.Nvme.name()])
             name = sku_capability.name
             if name == "vCPUs":
                 node_space.core_count = int(sku_capability.value)
@@ -1275,6 +1274,12 @@ class AzurePlatform(Platform):
             elif name == "EphemeralOSDiskSupported":
                 if eval(sku_capability.value) is True:
                     node_space.features.update([features.DiskEphemeral.name()])
+
+            if resource_sku.family in ["standardLSv2Family"] and name == "vCPUs":
+                node_space.features.update([features.Nvme.name()])
+                # refer https://docs.microsoft.com/en-us/azure/virtual-machines/lsv2-series # noqa: E501
+                # NVMe disk count = vCPU / 8
+                node_space.nvme_count = int(int(node_space.core_count) / 8)
 
         # set a min value for nic_count work around for an azure python sdk bug
         # nic_count is 0 when get capability for some sizes e.g. Standard_D8a_v3

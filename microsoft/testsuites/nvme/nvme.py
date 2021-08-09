@@ -383,3 +383,34 @@ class nvme(TestSuite):  # noqa
         lspci.disable_devices(device_type="NVME")
         # 2. Enable NVME device.
         lspci.enable_devices()
+
+    @TestCaseMetadata(
+        description="""
+        This test case will
+        1. Disable PCI devices.
+        2. Enable PCI devices.
+        3. Get PCI devices slots.
+        4. Check PCI devices are back after rescan.
+        """,
+        priority=2,
+        requirement=simple_requirement(
+            min_nvme_count=10,
+            min_nic_count=8,
+            supported_features=[Nvme],
+        ),
+    )
+    def nvme_pci_devices_disable_enable_validation(self, node: Node) -> None:
+        lspci = node.tools[Lspci]
+        device_types = ["NVME", "SRIOV"]
+        for device_type in device_types:
+            # 1. Disable PCI devices.
+            before_pci_count = lspci.disable_devices(device_type)
+            # 2. Enable PCI devices.
+            lspci.enable_devices()
+            # 3. Get PCI devices slots.
+            after_devices_slots = lspci.get_devices_slots(device_type, True)
+            # 4. Check PCI devices are back after rescan.
+            assert_that(
+                after_devices_slots,
+                "After rescan, the disabled PCI devices should be back.",
+            ).is_length(before_pci_count)

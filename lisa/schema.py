@@ -383,6 +383,10 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
         default=search_space.IntRange(min=0),
         metadata=metadata(decoder=search_space.decode_count_space),
     )
+    nvme_count: search_space.CountSpace = field(
+        default=search_space.IntRange(min=0),
+        metadata=metadata(decoder=search_space.decode_count_space),
+    )
     # all features on requirement should be included.
     # all features on capability can be included.
     features: Optional[search_space.SetSpace[str]] = field(
@@ -418,6 +422,7 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
             and self.disk_count == o.disk_count
             and self.nic_count == o.nic_count
             and self.gpu_count == o.gpu_count
+            and self.nvme_count == o.nvme_count
             and self.features == o.features
             and self.excluded_features == o.excluded_features
         )
@@ -432,8 +437,8 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
             f"count:{self.node_count},core:{self.core_count},"
             f"mem:{self.memory_mb},disk:{self.disk_count},"
             f"nic:{self.nic_count},gpu:{self.gpu_count},"
-            f"f:{self.features},ef:{self.excluded_features},"
-            f"{super().__repr__()}"
+            f"nvme:{self.nvme_count},f:{self.features},"
+            f"ef:{self.excluded_features},{super().__repr__()}"
         )
 
     def check(self, capability: Any) -> search_space.ResultReason:
@@ -493,6 +498,10 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
         result.merge(
             search_space.check_countspace(self.gpu_count, capability.gpu_count),
             "gpu_count",
+        )
+        result.merge(
+            search_space.check_countspace(self.nvme_count, capability.nvme_count),
+            "nvme_count",
         )
         result.merge(
             search_space.check(self.features, capability.features),
@@ -566,6 +575,12 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
             )
         else:
             min_value.gpu_count = 0
+        if self.nvme_count or capability.nvme_count:
+            min_value.nvme_count = search_space.generate_min_capability_countspace(
+                self.nvme_count, capability.nvme_count
+            )
+        else:
+            min_value.nvme_count = 0
 
         if capability.features:
             min_value.features = search_space.SetSpace[str](is_allow_set=True)
