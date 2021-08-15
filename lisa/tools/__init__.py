@@ -25,11 +25,13 @@ from .ntp import Ntp
 from .ntpstat import Ntpstat
 from .ntttcp import Ntttcp
 from .nvmecli import Nvmecli
+from .parted import Parted
 from .reboot import Reboot
 from .service import Service
 from .timedatectl import Timedatectl
 from .uptime import Uptime
 from .who import Who
+from .xfstests import Xfstests
 
 __all__ = [
     "Cat",
@@ -56,6 +58,7 @@ __all__ = [
     "Ntpstat",
     "Ntttcp",
     "Nvmecli",
+    "Parted",
     "Reboot",
     "Sed",
     "Uname",
@@ -64,4 +67,5 @@ __all__ = [
     "Uptime",
     "Wget",
     "Who",
+    "Xfstests",
 ]

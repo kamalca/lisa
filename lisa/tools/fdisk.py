@@ -44,7 +44,7 @@ class Fdisk(Tool):
         )
         if file_system == FileSystem.xfs:
             mkfs_xfs = self.node.tools[Mkfsxfs]
-            mkfs_xfs.mkfs(f"{disk_name}p1", str(file_system))
+            mkfs_xfs.mkfs(f"{disk_name}p1", f"{file_system} -f")
         elif file_system in [FileSystem.ext2, FileSystem.ext3, FileSystem.ext4]:
             mkfs_ext = self.node.tools[Mkfsext]
             mkfs_ext.mkfs(f"{disk_name}p1", str(file_system))
