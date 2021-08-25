@@ -12,12 +12,15 @@ from lisa.node import Node
 from lisa.tools.echo import Echo
 from lisa.tools.lscpu import Lscpu
 from lisa.tools.lsvmbus import Lsvmbus
-from lisa.util import BadEnvironmentStateException, SkippedException
+from lisa.util import BadEnvironmentStateException, PassedException, SkippedException
 
 
 class CPUState:
     OFFLINE: str = "0"
     ONLINE: str = "1"
+
+
+hyperv_interrupt_substr = ["hyperv", "Hypervisor", "Hyper-V"]
 
 
 @testsuite.TestSuiteMetadata(
@@ -129,3 +132,63 @@ class CPU(testsuite.TestSuite):
                 "L3 cache of each core must be mapped to the NUMA node "
                 "associated with the core.",
             ).is_equal_to(cpu.numa_node)
+
+    @testsuite.TestCaseMetadata(
+        description="""
+            This test will verify if the CPUs inside a Linux VM are processing VMBus
+            interrupts by checking the /proc/interrupts file.
+
+            Steps:
+            1. Looks for the Hyper-v timer property of each CPU under /proc/interrupts
+            2. Verifies if atleast one CPU has more than 0 interrupts processed.
+
+            Note: There are 3 types of Hyper-v interrupts : Hypervisor callback
+            interrupts, Hyper-V reenlightenment interrupts, and Hyper-V stimer0
+            interrupts. We also do not need to have each CPU handle vmbus message
+            or event in multi CPUs VM.
+            """,
+        priority=2,
+    )
+    def verify_vmbus_interrupts(self, node: Node, log: Logger) -> None:
+        found_hyperv_interrupt = False
+        cpu_count = node.tools[Lscpu].get_core_count()
+        is_cpu_handling_interrupt = [False] * cpu_count
+        log.debug(f"{cpu_count} CPU cores detected...")
+
+        interrupts = node.tools[Cat].get_interrupt_data()
+        for interrupt in interrupts:
+            is_hyperv_interrupt = any(
+                [(substr in interrupt.metadata) for substr in hyperv_interrupt_substr]
+            )
+            found_hyperv_interrupt = found_hyperv_interrupt | is_hyperv_interrupt
+            if is_hyperv_interrupt:
+                log.debug(f"Hyper-V interrupt : {interrupt}")
+                assert_that(
+                    len(interrupt.interrupt_count),
+                    "Interrupt count should be present for each cpu.",
+                ).is_equal_to(cpu_count)
+                is_cpu_handling_interrupt = [
+                    ((interrupt.interrupt_count[i] > 0) | is_cpu_handling_interrupt[i])
+                    for i in range(len(interrupt.interrupt_count))
+                ]
+
+        log.debug(f"CPU interrupt handling : {is_cpu_handling_interrupt}")
+
+        # It is not mandatory to have the Hyper-V interrupts present under
+        # `/proc/interrupts`. Skip test execution if these are not showing up
+        if not found_hyperv_interrupt:
+            raise SkippedException("Hyper-V interrupts are not recorded, abort test.")
+
+        # Ensure that atleast one CPU is handling hyper-v interrupts
+        is_any_cpu_handling_interrupt = any(is_cpu_handling_interrupt)
+        assert_that(
+            is_any_cpu_handling_interrupt, "No CPU core is processing VMBUS interrupts!"
+        )
+
+        # Pass the test with warning if not all CPU's are processing interrupts
+        if sum(is_cpu_handling_interrupt) < cpu_count:
+            raise PassedException(
+                "Some CPU cores are processing VMBUS interrupts, but it is ok to "
+                "miss a few core not processing VMBUS interrupts because of big "
+                "size VM."
+            )
