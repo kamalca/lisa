@@ -16,8 +16,8 @@ from lisa.util import (
     LisaException,
     PassedException,
     SkippedException,
-    UnsupportedOperationException,
     UnsupportedDistroException,
+    UnsupportedOperationException,
 )
 from lisa.util.logger import Logger, init_logger
 from lisa.util.perf_timer import create_timer
