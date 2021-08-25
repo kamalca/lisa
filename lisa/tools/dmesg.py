@@ -18,6 +18,10 @@ class Dmesg(Tool):
         re.compile("BUG: soft lockup"),
     ]
 
+    __vmbus_vesion_pattern = re.compile(
+        r"^\[\s+\d+.\d+\]\s+hv_vmbus:\s+Vmbus version:(?P<major>\d+).(?P<minor>\d+)"
+    )
+
     @property
     def command(self) -> str:
         return "dmesg"
@@ -56,6 +60,21 @@ class Dmesg(Tool):
             else:
                 self._log.debug(error_message)
         return result
+
+    def get_vmbus_version(self) -> str:
+        output = self._run()
+        output.assert_exit_code(
+            message=f"exit code should be zero, but actually {output.exit_code}"
+        )
+        for line in output.stdout.splitlines(keepends=False):
+            matched_vmbus_version = self.__vmbus_vesion_pattern.match(line)
+            if matched_vmbus_version:
+                major = matched_vmbus_version.group("major")
+                minor = matched_vmbus_version.group("minor")
+                self._log.info(f"vmbus version is {major}.{minor}")
+                return major
+        self._log.info("No vmbus version in dmesg")
+        return ""
 
     def _run(self, force_run: bool = False) -> ExecutableResult:
         # sometime it need sudo, we can retry
