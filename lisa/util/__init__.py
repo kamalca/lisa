@@ -51,6 +51,15 @@ class UnsupportedOperationException(Exception):
     ...
 
 
+class UnsupportedDistroException(Exception):
+    """
+    This exception is used to indicate that a test case does not support the testing
+    distro.
+    """
+
+    ...
+
+
 class SkippedException(Exception):
     """
     A test case can be skipped based on runtime information.

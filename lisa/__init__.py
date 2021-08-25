@@ -17,6 +17,7 @@ from lisa.util import (
     PassedException,
     SkippedException,
     UnsupportedOperationException,
+    UnsupportedDistroException,
 )
 from lisa.util.logger import Logger, init_logger
 from lisa.util.perf_timer import create_timer
@@ -35,6 +36,7 @@ __all__ = [
     "TestCaseMetadata",
     "TestSuite",
     "UnsupportedOperationException",
+    "UnsupportedDistroException",
     "create_timer",
     "simple_requirement",
 ]
