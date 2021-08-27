@@ -16,16 +16,15 @@ from typing import List
 
 import toml
 
-root_dir = Path(__file__).parents[1]
-sys.path.insert(0, str(root_dir.resolve()))
-
-from tools import update_file, update_summary  # noqa: E402
-
+root_dir = Path(__file__).parent.parent
 pyproj = root_dir / "pyproject.toml"
 requirement = root_dir / "docs" / "requirements.txt"
 
-sys.path.insert(0, str((root_dir / "docs" / "tools").resolve()))
+sys.path.insert(0, str(root_dir.resolve()))
+# sys.path.insert(0, str((root_dir / "docs" / "tools").resolve()))
 sys.path.insert(0, str((root_dir / "lisa").resolve()))
+
+from docs.tools import update_file, update_summary  # noqa: E402
 
 data = toml.load(pyproj)
 dependencies = data["tool"]["poetry"]["dependencies"]
