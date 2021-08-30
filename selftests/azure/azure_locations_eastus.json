@@ -36,10 +36,14 @@
                         "max_inclusive": true
                     }
                 },
-                "nic_count": {
-                    "min": 0,
-                    "max": 8,
-                    "max_inclusive": true
+                "network_interface": {
+                    "type": "NetworkInterface",
+                    "has_sriov": false,
+                    "nic_count": {
+                        "min": 0,
+                        "max": 8,
+                        "max_inclusive": true
+                    }
                 },
                 "gpu_count": 0,
                 "features": {
@@ -194,10 +198,14 @@
                         "max_inclusive": true
                     }
                 },
-                "nic_count": {
-                    "min": 0,
-                    "max": 2,
-                    "max_inclusive": true
+                "network_interface": {
+                    "type": "NetworkInterface",
+                    "has_sriov": false,
+                    "nic_count": {
+                        "min": 0,
+                        "max": 2,
+                        "max_inclusive": true
+                    }
                 },
                 "gpu_count": 0,
                 "features": {
@@ -361,10 +369,14 @@
                         "max_inclusive": true
                     }
                 },
-                "nic_count": {
-                    "min": 0,
-                    "max": 2,
-                    "max_inclusive": true
+                "network_interface": {
+                    "type": "NetworkInterface",
+                    "has_sriov": false,
+                    "nic_count": {
+                        "min": 0,
+                        "max": 2,
+                        "max_inclusive": true
+                    }
                 },
                 "gpu_count": 0,
                 "features": {

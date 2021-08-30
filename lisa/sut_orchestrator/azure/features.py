@@ -122,12 +122,21 @@ class Gpu(AzureFeatureMixin, features.Gpu):
         return driver_list
 
 
-class Sriov(AzureFeatureMixin, features.Sriov):
+class NetworkInterface(AzureFeatureMixin, features.NetworkInterface):
+    """
+    This Network interface feature is mainly to associate Azure
+    network interface options settings.
+    """
+
+    @classmethod
+    def settings_type(cls) -> Type[schema.FeatureSettings]:
+        return schema.NetworkInterfaceOptionSettings
+
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         super()._initialize(*args, **kwargs)
         self._initialize_information(self._node)
 
-    def _switch(self, enable: bool) -> None:
+    def _switch_sriov(self, enable: bool) -> None:
         azure_platform: AzurePlatform = self._platform  # type: ignore
         network_client = get_network_client(azure_platform)
         compute_client = get_compute_client(azure_platform)
@@ -166,7 +175,7 @@ class Sriov(AzureFeatureMixin, features.Sriov):
                     f"networking into status [{enable}]"
                 ).is_equal_to(enable)
 
-    def enabled(self) -> bool:
+    def is_enabled_sriov(self) -> bool:
         azure_platform: AzurePlatform = self._platform  # type: ignore
         network_client = get_network_client(azure_platform)
         compute_client = get_compute_client(azure_platform)

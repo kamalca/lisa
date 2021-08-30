@@ -506,6 +506,87 @@ class DiskOptionSettings(FeatureSettings):
 
 @dataclass_json()
 @dataclass()
+class NetworkInterfaceOptionSettings(FeatureSettings):
+    type: str = "NetworkInterface"
+    enable_sriov: Optional[bool] = None
+    nic_count: search_space.CountSpace = field(
+        default=search_space.IntRange(min=1),
+        metadata=metadata(decoder=search_space.decode_count_space),
+    )
+
+    def __eq__(self, o: object) -> bool:
+        assert isinstance(o, NetworkInterfaceOptionSettings), f"actual: {type(o)}"
+        return (
+            self.type == o.type
+            and self.enable_sriov == o.enable_sriov
+            and self.nic_count == o.nic_count
+        )
+
+    def __repr__(self) -> str:
+        return f"enable_sriov:{self.enable_sriov}, nic_count:{self.nic_count}"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def __hash__(self) -> int:
+        return super().__hash__()
+
+    def _get_key(self) -> str:
+        return f"{super()._get_key()}/{self.enable_sriov}/{self.nic_count}"
+
+    def check(self, capability: Any) -> search_space.ResultReason:
+        result = super().check(capability)
+
+        result.merge(
+            search_space.check_countspace(self.nic_count, capability.nic_count),
+            "nic_count",
+        )
+
+        # The capability need to have SRIOV set when SRIOV is not None.
+        if self.enable_sriov is not None and (
+            capability is None
+            or capability.enable_sriov is None
+            or capability.enable_sriov != self.enable_sriov
+        ):
+            result.add_reason("capability doesn't meet sriov requirement.")
+
+        return result
+
+    def _generate_min_capability(self, capability: Any) -> Any:
+        assert isinstance(
+            capability, NetworkInterfaceOptionSettings
+        ), f"actual: {type(capability)}"
+
+        min_value = NetworkInterfaceOptionSettings()
+
+        if self.nic_count or capability.nic_count:
+            min_value.nic_count = search_space.generate_min_capability_countspace(
+                self.nic_count, capability.nic_count
+            )
+        else:
+            raise LisaException("nic_count cannot be zero")
+
+        # If req has sriov enabled => cap must have sriov enabled
+        # If req has sriov disabled => cap must have sriov disabled
+        # If req has sriov None => cap can have sriov either disabled/enabled.
+        if self.enable_sriov:
+            if capability and capability.enable_sriov:
+                min_value.enable_sriov = True
+            else:
+                raise LisaException("capability doesn't meet sriov requirement.")
+        elif self.enable_sriov is not None and self.enable_sriov is False:
+            if capability and capability.enable_sriov is False:
+                min_value.enable_sriov = False
+            else:
+                raise LisaException("capability doesn't meet sriov requirement.")
+        else:
+            min_value.enable_sriov = capability.enable_sriov or False
+
+        return min_value
+
+
+@dataclass_json()
+@dataclass()
 class FeaturesSpace(
     search_space.SetSpace[Union[str, FeatureSettings]],
 ):
@@ -542,10 +623,7 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
         metadata=metadata(decoder=search_space.decode_count_space),
     )
     disk: Optional[DiskOptionSettings] = None
-    nic_count: search_space.CountSpace = field(
-        default=search_space.IntRange(min=1),
-        metadata=metadata(decoder=search_space.decode_count_space),
-    )
+    network_interface: NetworkInterfaceOptionSettings = NetworkInterfaceOptionSettings()
     gpu_count: search_space.CountSpace = field(
         default=search_space.IntRange(min=0),
         metadata=metadata(decoder=search_space.decode_count_space),
@@ -579,7 +657,7 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
             and self.core_count == o.core_count
             and self.memory_mb == o.memory_mb
             and self.disk == o.disk
-            and self.nic_count == o.nic_count
+            and self.network_interface == o.network_interface
             and self.gpu_count == o.gpu_count
             and self.features == o.features
             and self.excluded_features == o.excluded_features
@@ -594,7 +672,7 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
             f"default:{self.is_default},"
             f"count:{self.node_count},core:{self.core_count},"
             f"mem:{self.memory_mb},disk:{self.disk},"
-            f"nic:{self.nic_count},gpu:{self.gpu_count},"
+            f"network interface: {self.network_interface}, gpu:{self.gpu_count},"
             f"f:{self.features},ef:{self.excluded_features},"
             f"{super().__repr__()}"
         )
@@ -647,11 +725,9 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
             not capability.node_count
             or not capability.core_count
             or not capability.memory_mb
-            or not capability.nic_count
         ):
             result.add_reason(
-                "node_count, core_count, memory_mb, nic_count "
-                "shouldn't be None or zero."
+                "node_count, core_count, memory_mb " "shouldn't be None or zero."
             )
 
         if isinstance(self.node_count, int) and isinstance(capability.node_count, int):
@@ -676,10 +752,8 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
         )
         if self.disk:
             result.merge(self.disk.check(capability.disk))
-        result.merge(
-            search_space.check_countspace(self.nic_count, capability.nic_count),
-            "nic_count",
-        )
+        if self.network_interface:
+            result.merge(self.network_interface.check(capability.network_interface))
         result.merge(
             search_space.check_countspace(self.gpu_count, capability.gpu_count),
             "gpu_count",
@@ -760,13 +834,11 @@ class NodeSpace(search_space.RequirementMixin, TypedSchema, ExtendableSchemaMixi
             min_value.disk = search_space.generate_min_capability(
                 self.disk, capability.disk
             )
-
-        if self.nic_count or capability.nic_count:
-            min_value.nic_count = search_space.generate_min_capability_countspace(
-                self.nic_count, capability.nic_count
+        if self.network_interface or capability.network_interface:
+            min_value.network_interface = search_space.generate_min_capability(
+                self.network_interface, capability.network_interface
             )
-        else:
-            raise LisaException("nic_count cannot be zero")
+
         if self.gpu_count or capability.gpu_count:
             min_value.gpu_count = search_space.generate_min_capability_countspace(
                 self.gpu_count, capability.gpu_count

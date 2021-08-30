@@ -143,7 +143,9 @@ def generate_runbook(
                 "node_count": 2,
                 "core_count": 8,
                 "disk": {"data_disk_count": {"min": 1}},
-                "nic_count": {"min": 1, "max": 1},
+                "network_interface": {
+                    "nic_count": {"min": 1, "max": 1},
+                },
             }
         )
     if local_remote_node_extensions:
@@ -234,7 +236,8 @@ class EnvironmentTestCase(TestCase):
             search_space.IntRange(min=1), env_cap.nodes[0].disk.data_disk_count
         )
         self.assertEqual(
-            search_space.IntRange(min=1, max=1), env_cap.nodes[0].nic_count
+            search_space.IntRange(min=1, max=1),
+            env_cap.nodes[0].network_interface.nic_count,
         )
 
     def test_create_from_requirement(self) -> None:
