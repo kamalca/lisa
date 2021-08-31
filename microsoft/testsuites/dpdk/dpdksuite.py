@@ -10,7 +10,6 @@ from lisa import Logger, Node, TestCaseMetadata, TestSuite, TestSuiteMetadata
 from lisa.features import Sriov
 from lisa.testsuite import simple_requirement
 from lisa.tools import Echo, Lspci, Mount
-
 from microsoft.testsuites.dpdk.dpdktestpmd import DpdkTestpmd
 
 
