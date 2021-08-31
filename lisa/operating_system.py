@@ -330,7 +330,16 @@ class Posix(OperatingSystem, BaseClassMixin):
             if os_release_info.group("name") == "NAME":
                 vendor = os_release_info.group("value")
             elif os_release_info.group("name") == "VERSION_ID":
-                release = os_release_info.group("value")
+                # get release from /etc/debian_version for debian distro
+                # e.g. credativ debian 9-backports 9.20190313.0
+                # cat /etc/debian_version - 9.8
+                # VERSION_ID="9"
+                if "Debian" in vendor:
+                    cmd_result = cat.run("/etc/debian_version")
+                    cmd_result.assert_exit_code(message="error on get debian version")
+                    release = cmd_result.stdout
+                else:
+                    release = os_release_info.group("value")
             elif os_release_info.group("name") == "VERSION":
                 codename = get_matched_str(
                     os_release_info.group("value"),
@@ -503,40 +512,6 @@ class Debian(Linux):
             return True
         return False
 
-    def _get_information(self) -> OsInformation:
-        cmd_result = self._node.execute(
-            cmd="lsb_release -a", shell=True, no_error_log=True
-        )
-        cmd_result.assert_exit_code(message="error on get os information")
-        assert cmd_result.stdout, "not found os information from 'lsb_release -a'"
-
-        for row in cmd_result.stdout.splitlines():
-            os_release_info = self.__lsb_os_info_pattern.match(row)
-            if os_release_info:
-                if os_release_info.group("name") == "Distributor ID":
-                    vendor = os_release_info.group("value")
-                elif os_release_info.group("name") == "Release":
-                    release = os_release_info.group("value")
-                elif os_release_info.group("name") == "Codename":
-                    codename = os_release_info.group("value")
-                elif os_release_info.group("name") == "Description":
-                    full_version = os_release_info.group("value")
-
-        if vendor == "":
-            raise LisaException("OS version information not found")
-        if release == "":
-            raise LisaException("OS release information not found")
-
-        information = OsInformation(
-            version=self._parse_version(release),
-            vendor=vendor,
-            release=release,
-            codename=codename,
-            full_version=full_version,
-        )
-
-        return information
-
     def _update_packages(self, packages: Optional[Union[List[str]]] = None) -> None:
         command = (
             "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y "
@@ -630,6 +605,40 @@ class Ubuntu(Debian):
         # output to log for troubleshooting
         cat = self._node.tools[Cat]
         cat.run("/etc/default/grub")
+
+    def _get_information(self) -> OsInformation:
+        cmd_result = self._node.execute(
+            cmd="lsb_release -a", shell=True, no_error_log=True, sudo=True
+        )
+        cmd_result.assert_exit_code(message="error on get os information")
+        assert cmd_result.stdout, "not found os information from 'lsb_release -a'"
+
+        for row in cmd_result.stdout.splitlines():
+            os_release_info = self.__lsb_os_info_pattern.match(row)
+            if os_release_info:
+                if os_release_info.group("name") == "Distributor ID":
+                    vendor = os_release_info.group("value")
+                elif os_release_info.group("name") == "Release":
+                    release = os_release_info.group("value")
+                elif os_release_info.group("name") == "Codename":
+                    codename = os_release_info.group("value")
+                elif os_release_info.group("name") == "Description":
+                    full_version = os_release_info.group("value")
+
+        if vendor == "":
+            raise LisaException("OS version information not found")
+        if release == "":
+            raise LisaException("OS release information not found")
+
+        information = OsInformation(
+            version=self._parse_version(release),
+            vendor=vendor,
+            release=release,
+            codename=codename,
+            full_version=full_version,
+        )
+
+        return information
 
 
 class FreeBSD(BSD):
