@@ -1,0 +1,8 @@
+name: test
+include:
+  - path: ../../runbook/azure.yml
+extension:
+  - .
+testcase:
+  - criteria:
+      name: test
