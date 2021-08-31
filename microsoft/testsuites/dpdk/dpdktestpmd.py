@@ -12,10 +12,10 @@ from lisa.operating_system import CentOs, Redhat, Ubuntu
 from lisa.tools import Git, Lspci, Wget
 from lisa.util import SkippedException
 
-# TestPMD tool to bundle the DPDK build and toolset together.
-
 
 class DpdkTestpmd(Tool):
+    # TestPMD tool to bundle the DPDK build and toolset together.
+
     @property
     def command(self) -> str:
         return self._testpmd_install_path
