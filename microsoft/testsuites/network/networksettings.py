@@ -13,6 +13,8 @@ from lisa import (
     TestSuiteMetadata,
     UnsupportedOperationException,
 )
+from lisa.base_tools import Uname
+from lisa.operating_system import Debian, Redhat, Suse
 from lisa.tools import Ethtool
 
 
@@ -264,3 +266,123 @@ class NetworkSettings(TestSuite):
                 "GRO and LRO settings for all the devices are fixed and cannot be"
                 " changed. Skipping test."
             )
+
+    @TestCaseMetadata(
+        description="""
+            This test case verifies changing device's RSS hash key takes
+            into affect.
+
+            Steps:
+            1. Skip the test if the kernel version is any less than LTS 5.
+            2. Get all the device's RSS hash key values.
+            3. Swap the last 2 characters of original hash key to make a new hash key.
+            4. Validate changing the hash key setting using the new hash key.
+            5. Revert back the settings to original values.
+        """,
+        priority=2,
+    )
+    def validate_device_rss_hash_key_change(self, node: Node, log: Logger) -> None:
+        uname = node.tools[Uname]
+        linux_info = uname.get_linux_information()
+
+        if isinstance(node.os, Debian):
+            min_supported_kernel = "5.0.0"
+        elif isinstance(node.os, Redhat):
+            min_supported_kernel = "4.0.0"
+        elif isinstance(node.os, Suse):
+            min_supported_kernel = "4.12.14"
+        else:
+            # For other OS, it is not known which minimum kernel version
+            # supports RSS Hash key change. This can be found and later
+            # enhanced after running tests.
+            min_supported_kernel = str(linux_info.kernel_version)
+
+        if linux_info.kernel_version < min_supported_kernel:
+            raise SkippedException(
+                f"The kernel version {linux_info.kernel_version} does not support"
+                " changing RSS hash key."
+            )
+
+        ethtool = node.tools[Ethtool]
+        try:
+            devices_rss_hkey_info = ethtool.get_all_device_rss_hash_key()
+        except UnsupportedOperationException as identifier:
+            raise SkippedException(identifier)
+
+        for device_hkey_info in devices_rss_hkey_info:
+            original_hkey = device_hkey_info.rss_hash_key
+            # Swap the last 2 characters of the original hash key to make new hash key.
+            split_hkey = original_hkey.rsplit(":", 1)
+            swapped_part = "".join(
+                [
+                    split_hkey[1][x : x + 2][::-1]
+                    for x in range(0, len(split_hkey[1]), 2)
+                ]
+            )
+
+            expected_hkey = f"{split_hkey[0]}:{swapped_part}"
+            new_settings = ethtool.change_device_rss_hash_key(
+                device_hkey_info.interface, expected_hkey
+            )
+            assert_that(
+                new_settings.rss_hash_key,
+                "Changing RSS hash key didn't succeed",
+            ).is_equal_to(expected_hkey)
+
+            # Revert the settings back to original values
+            reverted_settings = ethtool.change_device_rss_hash_key(
+                device_hkey_info.interface, original_hkey
+            )
+            assert_that(
+                reverted_settings.rss_hash_key,
+                "Reverting RSS hash key to original value didn't succeed",
+            ).is_equal_to(original_hkey)
+
+    @TestCaseMetadata(
+        description="""
+            This test case verifies whether changing device's RX hash level
+            for tcp and udp takes into affect.
+
+            Steps:
+                Note: Same steps are used for both TCP and UDP.
+            1. Get all the device's RX hash level status.
+            2. Depending on current setting, change to enabled/disabled.
+            3. Validate changing the hash level setting.
+            4. Revert back the settings to original values.
+        """,
+        priority=2,
+    )
+    def validate_device_rx_hash_level_change(self, node: Node, log: Logger) -> None:
+        ethtool = node.tools[Ethtool]
+
+        # Run the test for both TCP and UDP
+        test_protocols = ["tcp4", "udp4"]
+
+        for protocol in test_protocols:
+            try:
+                devices_rx_hlevel_info = ethtool.get_all_device_rx_hash_level(protocol)
+            except UnsupportedOperationException as identifier:
+                raise SkippedException(identifier)
+
+            for device_hlevel_info in devices_rx_hlevel_info:
+                interface = device_hlevel_info.interface
+                original_hlevel = device_hlevel_info.protocol_hash_map[protocol]
+                expected_hlevel = not original_hlevel
+
+                new_settings = ethtool.change_device_rx_hash_level(
+                    interface, protocol, expected_hlevel
+                )
+                assert_that(
+                    new_settings.protocol_hash_map[protocol],
+                    f"Changing RX hash level for {protocol} didn't succeed",
+                ).is_equal_to(expected_hlevel)
+
+                # Revert the settings back to original values
+                reverted_settings = ethtool.change_device_rx_hash_level(
+                    interface, protocol, original_hlevel
+                )
+                assert_that(
+                    reverted_settings.protocol_hash_map[protocol],
+                    f"Reverting RX hash level for {protocol} to original value"
+                    " didn't succeed",
+                ).is_equal_to(original_hlevel)
