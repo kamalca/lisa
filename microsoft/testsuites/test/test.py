@@ -34,10 +34,10 @@ class check_floppy_module(TestSuite):
         priority=0,
     )
     def test(self, case_name: str, log: Logger, node: RemoteNode) -> None:
-        # result = node.execute("sudo modprobe floppy")
-        # print(result.stdout)
-        # print(result.stderr)
-        # print(result.exit_code)
+        result = node.execute("sudo modprobe floppy")
+        print(result.stdout)
+        print(result.stderr)
+        print(result.exit_code)
 
         # lsmod = node.tools[Lsmod]
         # if lsmod.module_exists("floppy"):
