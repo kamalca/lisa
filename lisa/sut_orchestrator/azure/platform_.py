@@ -26,10 +26,7 @@ from azure.mgmt.compute.models import (  # type: ignore
 )
 from azure.mgmt.marketplaceordering.models import AgreementTerms  # type: ignore
 from azure.mgmt.network.models import NetworkInterface, PublicIPAddress  # type: ignore
-from azure.mgmt.resource import (  # type: ignore
-    ResourceManagementClient,
-    SubscriptionClient,
-)
+from azure.mgmt.resource import SubscriptionClient  # type: ignore
 from azure.mgmt.resource.resources.models import (  # type: ignore
     Deployment,
     DeploymentMode,
@@ -66,6 +63,7 @@ from .common import (
     AzureVmPurchasePlanSchema,
     DataDiskCreateOption,
     DataDiskSchema,
+    check_or_create_resource_group,
     check_or_create_storage_account,
     get_compute_client,
     get_environment_context,
@@ -73,6 +71,7 @@ from .common import (
     get_network_client,
     get_node_context,
     get_or_create_storage_container,
+    get_resource_management_client,
     get_storage_account_name,
     wait_copy_blob,
     wait_operation,
@@ -607,6 +606,34 @@ class AzurePlatform(Platform):
 
         return result
 
+    def _get_platform_information(self, environment: Environment) -> Dict[str, str]:
+        result: Dict[str, str] = {}
+        azure_runbook: AzurePlatformSchema = self.runbook.get_extended_runbook(
+            AzurePlatformSchema
+        )
+
+        result[AZURE_RG_NAME_KEY] = get_environment_context(
+            environment
+        ).resource_group_name
+        if azure_runbook.availability_set_properties:
+            for (
+                property_name,
+                property_value,
+            ) in azure_runbook.availability_set_properties.items():
+                if property_name in [
+                    "platformFaultDomainCount",
+                    "platformUpdateDomainCount",
+                ]:
+                    continue
+                if isinstance(property_value, dict):
+                    for key, value in property_value.items():
+                        result[key] = value
+        if azure_runbook.availability_set_tags:
+            for key, value in azure_runbook.availability_set_tags.items():
+                result[key] = value
+
+        return result
+
     def _get_environment_information(self, environment: Environment) -> Dict[str, str]:
         information: Dict[str, str] = {}
         node_runbook: Optional[AzureNodeSchema] = None
@@ -639,6 +666,8 @@ class AzurePlatform(Platform):
                     information[KEY_WALA_VERSION] = wala_version
             except Exception as identifier:
                 node.log.exception("error on get waagent version", exc_info=identifier)
+
+            information.update(self._get_platform_information(environment))
 
             if node.is_connected and node.is_posix:
                 information.update(self._get_node_information(node))
@@ -695,18 +724,17 @@ class AzurePlatform(Platform):
             f"{subscription.id}, '{subscription.display_name}'"
         )
 
-        self._rm_client = ResourceManagementClient(
-            credential=self.credential, subscription_id=self.subscription_id
+        check_or_create_resource_group(
+            self.credential,
+            self.subscription_id,
+            AZURE_SHARED_RG_NAME,
+            RESOURCE_GROUP_LOCATION,
+            self._log,
         )
 
-        az_shared_rg_exists = self._rm_client.resource_groups.check_existence(
-            AZURE_SHARED_RG_NAME
+        self._rm_client = get_resource_management_client(
+            self.credential, self.subscription_id
         )
-        if not az_shared_rg_exists:
-            self._log.info(f"Creating Resource group: '{AZURE_SHARED_RG_NAME}'")
-            self._rm_client.resource_groups.create_or_update(
-                AZURE_SHARED_RG_NAME, {"location": RESOURCE_GROUP_LOCATION}
-            )
 
     @lru_cache
     def _load_template(self) -> Any:
