@@ -1,0 +1,8 @@
+name: hv_module
+include:
+  - path: ../../runbook/azure.yml
+extension:
+  - .
+testcase:
+  - criteria:
+      name: verify_lis_modules_version
