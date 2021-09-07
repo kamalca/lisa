@@ -26,10 +26,7 @@ from azure.mgmt.compute.models import (  # type: ignore
 )
 from azure.mgmt.marketplaceordering.models import AgreementTerms  # type: ignore
 from azure.mgmt.network.models import NetworkInterface, PublicIPAddress  # type: ignore
-from azure.mgmt.resource import (  # type: ignore
-    ResourceManagementClient,
-    SubscriptionClient,
-)
+from azure.mgmt.resource import SubscriptionClient  # type: ignore
 from azure.mgmt.resource.resources.models import (  # type: ignore
     Deployment,
     DeploymentMode,
@@ -66,6 +63,7 @@ from .common import (
     AzureVmPurchasePlanSchema,
     DataDiskCreateOption,
     DataDiskSchema,
+    check_or_create_resource_group,
     check_or_create_storage_account,
     get_compute_client,
     get_environment_context,
@@ -73,6 +71,7 @@ from .common import (
     get_network_client,
     get_node_context,
     get_or_create_storage_container,
+    get_resource_management_client,
     get_storage_account_name,
     wait_copy_blob,
     wait_operation,
@@ -188,7 +187,6 @@ class AzureArmParameter:
     admin_key_data: str = ""
     availability_set_tags: Dict[str, str] = field(default_factory=dict)
     availability_set_properties: Dict[str, Any] = field(default_factory=dict)
-    enable_sriov: Optional[bool] = None
     nodes: List[AzureNodeSchema] = field(default_factory=list)
     data_disks: List[DataDiskSchema] = field(default_factory=list)
 
@@ -289,7 +287,7 @@ class AzurePlatform(Platform):
             features.Gpu,
             features.Nvme,
             features.SerialConsole,
-            features.Sriov,
+            features.NetworkInterface,
             features.StartStop,
         ]
 
@@ -431,7 +429,6 @@ class AzurePlatform(Platform):
                         if found_capabilities[req_index]:
                             # found, so skipped
                             break
-
                         check_result = req.check(azure_cap.capability)
                         if check_result.result:
                             min_cap = self._generate_min_capability(
@@ -480,8 +477,12 @@ class AzurePlatform(Platform):
                     log.info(
                         f"creating or updating resource group: [{resource_group_name}]"
                     )
-                    self._rm_client.resource_groups.create_or_update(
-                        resource_group_name, {"location": RESOURCE_GROUP_LOCATION}
+                    check_or_create_resource_group(
+                        self.credential,
+                        subscription_id=self.subscription_id,
+                        resource_group_name=resource_group_name,
+                        location=RESOURCE_GROUP_LOCATION,
+                        log=log,
                     )
                 else:
                     log.info(f"reusing resource group: [{resource_group_name}]")
@@ -607,6 +608,34 @@ class AzurePlatform(Platform):
 
         return result
 
+    def _get_platform_information(self, environment: Environment) -> Dict[str, str]:
+        result: Dict[str, str] = {}
+        azure_runbook: AzurePlatformSchema = self.runbook.get_extended_runbook(
+            AzurePlatformSchema
+        )
+
+        result[AZURE_RG_NAME_KEY] = get_environment_context(
+            environment
+        ).resource_group_name
+        if azure_runbook.availability_set_properties:
+            for (
+                property_name,
+                property_value,
+            ) in azure_runbook.availability_set_properties.items():
+                if property_name in [
+                    "platformFaultDomainCount",
+                    "platformUpdateDomainCount",
+                ]:
+                    continue
+                if isinstance(property_value, dict):
+                    for key, value in property_value.items():
+                        result[key] = value
+        if azure_runbook.availability_set_tags:
+            for key, value in azure_runbook.availability_set_tags.items():
+                result[key] = value
+
+        return result
+
     def _get_environment_information(self, environment: Environment) -> Dict[str, str]:
         information: Dict[str, str] = {}
         node_runbook: Optional[AzureNodeSchema] = None
@@ -639,6 +668,8 @@ class AzurePlatform(Platform):
                     information[KEY_WALA_VERSION] = wala_version
             except Exception as identifier:
                 node.log.exception("error on get waagent version", exc_info=identifier)
+
+            information.update(self._get_platform_information(environment))
 
             if node.is_connected and node.is_posix:
                 information.update(self._get_node_information(node))
@@ -695,18 +726,17 @@ class AzurePlatform(Platform):
             f"{subscription.id}, '{subscription.display_name}'"
         )
 
-        self._rm_client = ResourceManagementClient(
-            credential=self.credential, subscription_id=self.subscription_id
+        check_or_create_resource_group(
+            self.credential,
+            self.subscription_id,
+            AZURE_SHARED_RG_NAME,
+            RESOURCE_GROUP_LOCATION,
+            self._log,
         )
 
-        az_shared_rg_exists = self._rm_client.resource_groups.check_existence(
-            AZURE_SHARED_RG_NAME
+        self._rm_client = get_resource_management_client(
+            self.credential, self.subscription_id
         )
-        if not az_shared_rg_exists:
-            self._log.info(f"Creating Resource group: '{AZURE_SHARED_RG_NAME}'")
-            self._rm_client.resource_groups.create_or_update(
-                AZURE_SHARED_RG_NAME, {"location": RESOURCE_GROUP_LOCATION}
-            )
 
     @lru_cache
     def _load_template(self) -> Any:
@@ -892,13 +922,6 @@ class AzurePlatform(Platform):
         arm_parameters.storage_name = get_storage_account_name(
             self.subscription_id, arm_parameters.location
         )
-        if node.capability.has_feature(features.Sriov.name()):
-            arm_parameters.enable_sriov = True
-        else:
-            self._log.debug(
-                "use synthetic network since used size doesn't have Sriov capability"
-            )
-            arm_parameters.enable_sriov = False
 
         # the arm template may be updated by the hooks, so make a copy to avoid
         # the original template is modified.
@@ -948,10 +971,6 @@ class AzurePlatform(Platform):
             raise LisaException("vm_size is not detected before deploy")
         if not azure_node_runbook.location:
             raise LisaException("location is not detected before deploy")
-        if azure_node_runbook.nic_count <= 0:
-            raise LisaException(
-                f"nic_count need at least 1, but {azure_node_runbook.nic_count}"
-            )
         if azure_node_runbook.vhd:
             # vhd is higher priority
             azure_node_runbook.vhd = self._get_deployable_vhd_path(
@@ -995,6 +1014,17 @@ class AzurePlatform(Platform):
             node_space.disk.data_disk_size, int
         ), f"actual: {type(node_space.disk.data_disk_size)}"
         azure_node_runbook.data_disk_size = node_space.disk.data_disk_size
+
+        assert node_space.network_interface
+        assert isinstance(
+            node_space.network_interface.nic_count, int
+        ), f"actual: {node_space.network_interface.nic_count}"
+        azure_node_runbook.nic_count = node_space.network_interface.nic_count
+        assert isinstance(
+            node_space.network_interface.data_path, schema.NetworkDataPath
+        ), f"actual: {type(node_space.network_interface.data_path)}"
+        if node_space.network_interface.data_path == schema.NetworkDataPath.Sriov:
+            azure_node_runbook.enable_sriov = True
 
         return azure_node_runbook
 
@@ -1249,7 +1279,6 @@ class AzurePlatform(Platform):
             node_count=1,
             core_count=0,
             memory_mb=0,
-            nic_count=0,
             gpu_count=0,
         )
         node_space.name = f"{location}_{resource_sku.name}"
@@ -1262,6 +1291,10 @@ class AzurePlatform(Platform):
         )
         node_space.disk.data_disk_iops = search_space.IntRange(min=0)
         node_space.disk.data_disk_size = search_space.IntRange(min=0)
+        node_space.network_interface = schema.NetworkInterfaceOptionSettings()
+        node_space.network_interface.data_path = search_space.SetSpace[
+            schema.NetworkDataPath
+        ](is_allow_set=True, items=[])
         for sku_capability in resource_sku.capabilities:
             if resource_sku.family in ["standardLSv2Family"]:
                 node_space.features.add(
@@ -1277,8 +1310,13 @@ class AzurePlatform(Platform):
             elif name == "MemoryGB":
                 node_space.memory_mb = int(float(sku_capability.value) * 1024)
             elif name == "MaxNetworkInterfaces":
-                node_space.nic_count = search_space.IntRange(
-                    max=int(sku_capability.value)
+                # set a min value for nic_count work around for an azure python sdk bug
+                # nic_count is 0 when get capability for some sizes e.g. Standard_D8a_v3
+                sku_nic_count = int(sku_capability.value)
+                if sku_nic_count == 0:
+                    sku_nic_count = 1
+                node_space.network_interface.nic_count = search_space.IntRange(
+                    min=1, max=sku_nic_count
                 )
             elif name == "GPUs":
                 node_space.gpu_count = int(sku_capability.value)
@@ -1294,9 +1332,9 @@ class AzurePlatform(Platform):
                 if "standardDCSv2Family" == resource_sku.family:
                     continue
                 if eval(sku_capability.value) is True:
-                    # update features list if sriov feature is supported
-                    node_space.features.add(
-                        schema.FeatureSettings.create(features.Sriov.name())
+                    # update data path types if sriov feature is supported
+                    node_space.network_interface.data_path.add(
+                        schema.NetworkDataPath.Sriov
                     )
             elif name == "PremiumIO":
                 if eval(sku_capability.value) is True:
@@ -1304,12 +1342,6 @@ class AzurePlatform(Platform):
             elif name == "EphemeralOSDiskSupported":
                 if eval(sku_capability.value) is True:
                     node_space.disk.disk_type.add(schema.DiskType.Ephemeral)
-
-        # set a min value for nic_count work around for an azure python sdk bug
-        # nic_count is 0 when get capability for some sizes e.g. Standard_D8a_v3
-        if node_space.nic_count == 0:
-            node_space.nic_count = 1
-
         # all nodes support following features
         node_space.features.update(
             [
@@ -1319,6 +1351,7 @@ class AzurePlatform(Platform):
         )
         node_space.disk.disk_type.add(schema.DiskType.StandardHDDLRS)
         node_space.disk.disk_type.add(schema.DiskType.StandardSSDLRS)
+        node_space.network_interface.data_path.add(schema.NetworkDataPath.Synthetic)
 
         return node_space
 
@@ -1425,7 +1458,6 @@ class AzurePlatform(Platform):
             node_count=1,
             core_count=search_space.IntRange(min=1),
             memory_mb=search_space.IntRange(min=0),
-            nic_count=search_space.IntRange(min=1),
             gpu_count=search_space.IntRange(min=0),
         )
         node_space.disk = features.AzureDiskOptionSettings()
@@ -1437,6 +1469,13 @@ class AzurePlatform(Platform):
         node_space.disk.disk_type.add(schema.DiskType.Ephemeral)
         node_space.disk.disk_type.add(schema.DiskType.StandardHDDLRS)
         node_space.disk.disk_type.add(schema.DiskType.StandardSSDLRS)
+        node_space.network_interface = schema.NetworkInterfaceOptionSettings()
+        node_space.network_interface.data_path = search_space.SetSpace[
+            schema.NetworkDataPath
+        ](is_allow_set=True, items=[])
+        node_space.network_interface.data_path.add(schema.NetworkDataPath.Synthetic)
+        node_space.network_interface.data_path.add(schema.NetworkDataPath.Sriov)
+        node_space.network_interface.nic_count = search_space.IntRange(min=1)
 
         azure_capability = AzureCapability(
             location=location,
@@ -1456,7 +1495,6 @@ class AzurePlatform(Platform):
             [
                 schema.FeatureSettings.create(features.Nvme.name()),
                 schema.FeatureSettings.create(features.Gpu.name()),
-                schema.FeatureSettings.create(features.Sriov.name()),
                 schema.FeatureSettings.create(features.StartStop.name()),
                 schema.FeatureSettings.create(features.SerialConsole.name()),
             ]
@@ -1484,8 +1522,16 @@ class AzurePlatform(Platform):
         # the location may not be set
         azure_node_runbook.location = location
         azure_node_runbook.vm_size = azure_capability.vm_size
-        assert isinstance(min_cap.nic_count, int), f"actual: {min_cap.nic_count}"
-        azure_node_runbook.nic_count = min_cap.nic_count
+        assert min_cap.network_interface
+        assert isinstance(
+            min_cap.network_interface.nic_count, int
+        ), f"actual: {min_cap.network_interface.nic_count}"
+        azure_node_runbook.nic_count = min_cap.network_interface.nic_count
+        assert isinstance(
+            min_cap.network_interface.data_path, schema.NetworkDataPath
+        ), f"actual: {type(min_cap.network_interface.data_path)}"
+        if min_cap.network_interface.data_path == schema.NetworkDataPath.Sriov:
+            azure_node_runbook.enable_sriov = True
 
         assert min_cap.disk, "disk must exists"
         assert isinstance(
@@ -1622,4 +1668,8 @@ def _convert_to_azure_node_space(node_space: schema.NodeSpace) -> None:
         if node_space.disk:
             node_space.disk = schema.load_by_type(
                 features.AzureDiskOptionSettings, node_space.disk
+            )
+        if node_space.network_interface:
+            node_space.network_interface = schema.load_by_type(
+                schema.NetworkInterfaceOptionSettings, node_space.network_interface
             )

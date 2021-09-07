@@ -10,19 +10,22 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import subprocess
+
 import sys
 from pathlib import Path
+from typing import List
 
 import toml
 
-root_dir = Path(__file__).parents[1]
+root_dir = Path(__file__).parent.parent
 pyproj = root_dir / "pyproject.toml"
 requirement = root_dir / "docs" / "requirements.txt"
 
-sys.path.insert(0, str(root_dir.resolve()))
-sys.path.insert(0, str((root_dir / "docs" / "tools").resolve()))
-sys.path.insert(0, str((root_dir / "lisa").resolve()))
+# to import lisa package
+sys.path.insert(0, str(root_dir))
+sys.path.insert(0, str(root_dir / "docs"))
+
+from tools import update_file, update_summary  # type: ignore # noqa: E402
 
 data = toml.load(pyproj)
 dependencies = data["tool"]["poetry"]["dependencies"]
@@ -95,7 +98,7 @@ html_theme = "sphinx_rtd_theme"
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files, so
 # a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
+html_static_path: List[str] = []
 
 html_theme_options = {
     "collapse_navigation": False,
@@ -107,8 +110,6 @@ html_theme_options = {
 # -- Test auto-generation pipelines ------------------------------------------
 
 base_path = Path(__file__).parent
-test_table_pipeline = base_path / "tools/test_table_gen.py"
-test_spec_pipeline = base_path / "tools/test_spec_gen.py"
 
-subprocess.call(["python", test_table_pipeline])
-subprocess.call(["python", test_spec_pipeline])
+update_summary()
+update_file()
