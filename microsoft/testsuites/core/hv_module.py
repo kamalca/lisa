@@ -28,13 +28,28 @@ class HvModule(TestSuite):
         priority=0,
     )
     def verify_lis_modules_version(self, case_name: str, log: Logger, node: RemoteNode) -> None:
-        print("Running hv_module:verify_lis_modules_version")
-        env = node.os.information
-        print(f"Codename: {env.codename}")
-        print(f"Full version {env.full_version}")
-        print(f"Reselase: {env.release}")
-        print(f"Vendor: {env.vendor}")
-        print(f"Update: {env.update}")
-        print("Finished running")
-        
-        
+        pass
+
+    @TestCaseMetadata(
+        description="""
+        This test case will
+        1. Verify the presence of all LIS modules
+        """,
+        priority=0,
+    )
+    def lis_modules_check(self, case_name: str, log: Logger, node: RemoteNode) -> None:
+        uname = node.execute("uname -r").stdout
+        configPath = f"/boot/config-{uname}"
+        hvModules=["hv_storvsc", "hv_netvsc", "hv_vmbus", "hv_utils", "hid_hyperv"]
+        if node.execute(f"grep CONFIG_HYPERV_STORAGE=y {configPath}").exit_code == 0:
+            hvModules.remove("hv_storvsc")
+        if node.execute(f"grep CONFIG_HYPERV_NET=y {configPath}").exit_code == 0:
+            hvModules.remove("hv_netvsc")
+        if node.execute(f"grep CONFIG_HYPERV=y {configPath}").exit_code == 0:
+            hvModules.remove("hv_vmbus")
+        if node.execute(f"grep CONFIG_HYPERV_UTILS=y {configPath}").exit_code == 0:
+            hvModules.remove("hv_utils")
+        if node.execute(f"grep CONFIG_HID_HYPERV_MOUSE=y {configPath}").exit_code == 0:
+            hvModules.remove("hid_hyperv")
+
+        print(hvModules)

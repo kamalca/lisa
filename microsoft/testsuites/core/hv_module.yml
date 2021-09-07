@@ -5,4 +5,4 @@ extension:
   - .
 testcase:
   - criteria:
-      name: verify_lis_modules_version
+      name: lis_modules_check
