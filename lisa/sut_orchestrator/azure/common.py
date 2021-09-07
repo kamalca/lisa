@@ -3,6 +3,7 @@
 
 import re
 from dataclasses import InitVar, dataclass, field
+from threading import Lock
 from time import sleep
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
@@ -29,6 +30,11 @@ if TYPE_CHECKING:
 
 AZURE = "azure"
 AZURE_SHARED_RG_NAME = "lisa_shared_resource"
+
+
+# when call sdk APIs, it's easy to have conflict on access auth files. Use lock
+# to prevent it happens.
+_global_credential_access_lock = Lock()
 
 
 @dataclass
@@ -89,6 +95,7 @@ class AzureNodeSchema:
     )
     vhd: str = ""
     nic_count: int = 1
+    enable_sriov: bool = False
     data_disk_count: int = 0
     data_disk_caching_type: str = field(
         default=constants.DATADISK_CACHING_TYPE_NONE,
@@ -375,12 +382,18 @@ def check_or_create_resource_group(
     log: Logger,
 ) -> None:
     rm_client = get_resource_management_client(credential, subscription_id)
-    az_shared_rg_exists = rm_client.resource_groups.check_existence(resource_group_name)
-    if not az_shared_rg_exists:
-        log.info(f"Creating Resource group: '{AZURE_SHARED_RG_NAME}'")
-        rm_client.resource_groups.create_or_update(
-            AZURE_SHARED_RG_NAME, {"location": location}
+    global _global_credential_access_lock
+    with _global_credential_access_lock:
+        az_shared_rg_exists = rm_client.resource_groups.check_existence(
+            resource_group_name
         )
+    if not az_shared_rg_exists:
+        log.info(f"Creating Resource group: '{resource_group_name}'")
+
+        with _global_credential_access_lock:
+            rm_client.resource_groups.create_or_update(
+                resource_group_name, {"location": location}
+            )
 
 
 def wait_copy_blob(
