@@ -36,6 +36,7 @@ class Lsmod(Tool):
         no_error_log: bool = True,
     ) -> bool:
         result = self.run(
+            sudo=True,
             force_run=force_run,
             no_info_log=no_info_log,
             no_error_log=no_error_log,
@@ -46,7 +47,7 @@ class Lsmod(Tool):
             )
 
         module_info = find_patterns_in_lines(result.stdout, [self.__output_pattern])
-        if any(mod_name in info for info in module_info):
+        if any(mod_name in info for sublist in module_info for info in sublist):
             return True
 
         return False
