@@ -13,6 +13,7 @@ from .find import Find
 from .gcc import Gcc
 from .git import Git
 from .hwclock import Hwclock
+from .kdump import KdumpBase
 from .lscpu import Lscpu
 from .lsmod import Lsmod
 from .lspci import Lspci
@@ -27,6 +28,9 @@ from .ntttcp import Ntttcp
 from .nvmecli import Nvmecli
 from .reboot import Reboot
 from .service import Service
+from .sysctl import Sysctl
+from .tar import Tar
+from .taskset import TaskSet
 from .timedatectl import Timedatectl
 from .uptime import Uptime
 from .who import Who
@@ -43,6 +47,7 @@ __all__ = [
     "Gcc",
     "Git",
     "Hwclock",
+    "KdumpBase",
     "Lscpu",
     "Lsmod",
     "Lspci",
@@ -60,6 +65,9 @@ __all__ = [
     "Sed",
     "Uname",
     "Service",
+    "Sysctl",
+    "Tar",
+    "TaskSet",
     "Timedatectl",
     "Uptime",
     "Wget",

@@ -77,8 +77,12 @@ class DpdkTestpmd(Tool):
         "download/v1.10.2/ninja-linux.zip"
     )
 
-    def __execute_assert_zero(self, cmd: str, path: PurePath) -> str:
-        result = self.node.execute(cmd, sudo=True, shell=True, cwd=path)
+    def __execute_assert_zero(
+        self, cmd: str, path: PurePath, timeout: int = 600
+    ) -> str:
+        result = self.node.execute(
+            cmd, sudo=True, shell=True, cwd=path, timeout=timeout
+        )
         assert_that(result.exit_code).is_zero()
         return result.stdout
 
@@ -102,7 +106,7 @@ class DpdkTestpmd(Tool):
             self.__execute_assert_zero("meson build", dpdk_path)
             dpdk_build_path = dpdk_path.joinpath("build")
             self.__execute_assert_zero("which ninja", dpdk_build_path)
-            self.__execute_assert_zero("ninja", dpdk_build_path)
+            self.__execute_assert_zero("ninja", dpdk_build_path, timeout=1200)
             self.__execute_assert_zero("ninja install", dpdk_build_path)
             self.__execute_assert_zero("ldconfig", dpdk_build_path)
             return True
@@ -178,8 +182,18 @@ class DpdkTestpmd(Tool):
         return True
 
     def _generate_testpmd_command(self, nic_to_include: str) -> str:
+        #   testpmd \
+        #   -l <core-list> \
+        #   -n <num of mem channels> \
+        #   -w <pci address of the device you plan to use> \
+        #   --vdev="net_vdev_netvsc<id>,iface=<the iface to attach to>" \
+        #   -- --port-topology=chained \
+        #   --nb-cores <number of cores to use for test pmd> \
+        #   --forward-mode=txonly \
+        #   --eth-peer=<port id>,<receiver peer MAC address> \
+        #   --stats-period <display interval in seconds>
         return (
-            f"{self._testpmd_install_path} -l 2,3 -n 4 --proc-type=primary "
+            f"{self._testpmd_install_path} -l 0-1 -n 4 --proc-type=primary "
             + f"{nic_to_include} -- --forward-mode=txonly -a --stats-period 1"
         )
 
