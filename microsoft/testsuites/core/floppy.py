@@ -1,10 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 
-from assertpy import assert_that
-
 from lisa import RemoteNode, TestCaseMetadata, TestSuite, TestSuiteMetadata
-from lisa.tools import Lsmod
+from lisa.util import LisaException, PassedException
 
 
 @TestSuiteMetadata(
@@ -20,27 +18,23 @@ class Floppy(TestSuite):
     @TestCaseMetadata(
         description="""
         This test case will
-        1. Ensure the floppy driver is not loaded directly
-        into the kernel by checking boot config
-        2. Ensure the floppy driver is not loaded as a module using lsmod
+        1. Dry-run modprobe to see if floppy module can be loaded
+        2. If "insmod" is executed then it is not already loaded
+        3. If module cannot be found then it is not loaded
+        If the module is loaded, running modprobe will have no output
         """,
         priority=0,
     )
     def check_floppy_module(self, node: RemoteNode) -> None:
-        # 1
-        uname = node.execute("uname -r").stdout
-        configPath = f"/boot/config-{uname}"
+        result = node.execute("modprobe -nv floppy")
 
-        assert_that(
-            node.execute(f"grep CONFIG_BLK_DEV_FD=y {configPath}").exit_code
-        ).described_as(
-            "Floppy driver should not be installed in the kernel."
-        ).is_equal_to(
-            1
+        could_be_loaded = "insmod" in result.stdout
+        does_not_exist = "not found" in result.stderr or "not found" in result.stdout
+
+        if could_be_loaded or does_not_exist:
+            raise PassedException
+
+        raise LisaException(
+            "The floppy module should not be loaded.",
+            "Try adding the module to the blacklist.",
         )
-
-        # 2
-        lsmod = node.tools[Lsmod]
-        assert_that(lsmod.module_exists("floppy")).described_as(
-            "Floppy module should be disabled by adding it to the blacklist"
-        ).is_false()
