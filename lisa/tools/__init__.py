@@ -28,6 +28,7 @@ from .ntpstat import Ntpstat
 from .ntttcp import Ntttcp
 from .nvmecli import Nvmecli
 from .reboot import Reboot
+from .rpm import Rpm
 from .service import Service
 from .sysctl import Sysctl
 from .tar import Tar
@@ -64,6 +65,7 @@ __all__ = [
     "Ntttcp",
     "Nvmecli",
     "Reboot",
+    "Rpm",
     "Sed",
     "Uname",
     "Service",
