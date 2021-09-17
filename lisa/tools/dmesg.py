@@ -25,6 +25,10 @@ class Dmesg(Tool):
     __vmbus_version_pattern = re.compile(
         r"\[\s+\d+.\d+\]\s+hv_vmbus:.*Vmbus version:(?P<major>\d+).(?P<minor>\d+)"
     )
+    __lis_version_pattern = re.compile(
+        r"\[\s+\d+.\d+\].*Vmbus LIS version:\s*"
+        r"(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)"
+    )
 
     @property
     def command(self) -> str:
@@ -81,6 +85,24 @@ class Dmesg(Tool):
                 self._log.info(f"vmbus version is {major}.{minor}")
                 return VersionInfo(int(major), int(minor))
         raise LisaException("No find matched vmbus version in dmesg")
+
+    def get_lis_version(self) -> VersionInfo:
+        result = self._run()
+        result.assert_exit_code(
+            message=f"exit code should be zero, but actually {result.exit_code}"
+        )
+        raw_lis_version = re.finditer(self.__lis_version_pattern, result.stdout)
+        for vmbus_version in raw_lis_version:
+            matched_lis_version = self.__lis_version_pattern.match(
+                vmbus_version.group()
+            )
+            if matched_lis_version:
+                major = matched_lis_version.group("major")
+                minor = matched_lis_version.group("minor")
+                patch = matched_lis_version.group("patch")
+                self._log.info(f"LIS version is {major}.{minor}.{patch}")
+                return VersionInfo(int(major), int(minor), int(patch))
+        raise LisaException("No find matched LIS version in dmesg")
 
     def _run(self, force_run: bool = False) -> ExecutableResult:
         # sometime it need sudo, we can retry

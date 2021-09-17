@@ -5,8 +5,8 @@ from assertpy import assert_that
 
 from lisa import Logger, RemoteNode, TestCaseMetadata, TestSuite, TestSuiteMetadata
 from lisa.operating_system import CentOs, Redhat
-from lisa.util import SkippedException
-from lisa.tools import Modinfo
+from lisa.tools import Lsmod, Modinfo, Modprobe, Rpm, Uname
+from lisa.util import SkippedException, VersionInfo
 
 
 @TestSuiteMetadata(
@@ -20,22 +20,23 @@ from lisa.tools import Modinfo
 )
 class HvModule(TestSuite):
     def get_modules(self, node: RemoteNode) -> list[str]:
-        hvModules = ["hv_storvsc", "hv_netvsc", "hv_vmbus", "hv_utils", "hid_hyperv"]
-        uname = node.execute("uname -r").stdout
-        configPath = f"/boot/config-{uname}"
+        hv_modules = ["hv_storvsc", "hv_netvsc", "hv_vmbus", "hv_utils", "hid_hyperv"]
+        uname = node.tools[Uname]
+        kernel_version = uname.get_linux_information().kernel_version_raw
+        config_path = f"/boot/config-{kernel_version}"
 
-        if node.execute(f"grep CONFIG_HYPERV_STORAGE=y {configPath}").exit_code == 0:
-            hvModules.remove("hv_storvsc")
-        if node.execute(f"grep CONFIG_HYPERV_NET=y {configPath}").exit_code == 0:
-            hvModules.remove("hv_netvsc")
-        if node.execute(f"grep CONFIG_HYPERV=y {configPath}").exit_code == 0:
-            hvModules.remove("hv_vmbus")
-        if node.execute(f"grep CONFIG_HYPERV_UTILS=y {configPath}").exit_code == 0:
-            hvModules.remove("hv_utils")
-        if node.execute(f"grep CONFIG_HID_HYPERV_MOUSE=y {configPath}").exit_code == 0:
-            hvModules.remove("hid_hyperv")
+        if node.execute(f"grep CONFIG_HYPERV_STORAGE=y {config_path}").exit_code == 0:
+            hv_modules.remove("hv_storvsc")
+        if node.execute(f"grep CONFIG_HYPERV_NET=y {config_path}").exit_code == 0:
+            hv_modules.remove("hv_netvsc")
+        if node.execute(f"grep CONFIG_HYPERV=y {config_path}").exit_code == 0:
+            hv_modules.remove("hv_vmbus")
+        if node.execute(f"grep CONFIG_HYPERV_UTILS=y {config_path}").exit_code == 0:
+            hv_modules.remove("hv_utils")
+        if node.execute(f"grep CONFIG_HID_HYPERV_MOUSE=y {config_path}").exit_code == 0:
+            hv_modules.remove("hid_hyperv")
 
-        return hvModules
+        return hv_modules
 
     @TestCaseMetadata(
         description="""
@@ -54,11 +55,14 @@ class HvModule(TestSuite):
 
         # TODO: rpm check if LIS is installed
         # TODO: Check LIS version
-        hvModules = ["hv_storvsc", "hv_netvsc", "hv_vmbus", "hv_utils", "hid_hyperv"]
-        modinfo = node.tools[Modinfo]
-        print("Module versions:")
-        for module in hvModules:
-            print(f"{module}: {modinfo.get_version(module)}")
+        rpm = node.tools[Rpm]
+        print(f"""LIS Installed: {rpm.is_package_installed("microsoft-hyper-v")}""")
+
+        # hvModules = ["hv_storvsc", "hv_netvsc", "hv_vmbus", "hv_utils", "hid_hyperv"]
+        # modinfo = node.tools[Modinfo]
+        # print("Module versions:")
+        # for module in hvModules:
+        #     print(f"{module}: {modinfo.get_version(module)}")
 
     @TestCaseMetadata(
         description="""
@@ -68,22 +72,34 @@ class HvModule(TestSuite):
         priority=0,
     )
     def lis_modules_check(self, case_name: str, log: Logger, node: RemoteNode) -> None:
-        hvModules = self.get_modules(node)
+        hv_modules = self.get_modules(node)
+        distro_version = node.os.information.version
 
         # TODO: Special checks for RHEL and CentOS
+        rpm = node.tools[Rpm]
+        modprobe = node.tools[Modprobe]
+        lis_installed = rpm.is_package_installed("microsoft-hyper-v")
 
-        presentModules = 0
+        if distro_version >= "4.3.0" and lis_installed:
+            hv_modules.append("pci_hyperv")
+            modprobe.run("pci_hyperv", sudo=True)
+
+        if (distro_version >= "7.3.0" or distro_version < "7.5.0") and lis_installed:
+            hv_modules.append("mlx4_en")
+            modprobe.run("mlx4_en", sudo=True)
+
+        present_modules = 0
         output = node.execute("lsmod").stdout
-        for module in hvModules:
+        for module in hv_modules:
             if module in output:
                 log.info(f"Module {module} present")
-                presentModules = presentModules + 1
+                present_modules = present_modules + 1
             else:
                 log.error(f"Module {module} absent")
 
-        print(f"{len(hvModules)} == {presentModules}")
-        assert_that(presentModules, "Not all LIS modules are present.").is_equal_to(
-            len(hvModules)
+        print(f"{len(hv_modules)} == {present_modules}")
+        assert_that(present_modules, "Not all LIS modules are present.").is_equal_to(
+            len(hv_modules)
         )
 
     @TestCaseMetadata(
@@ -97,18 +113,21 @@ class HvModule(TestSuite):
     def initrd_modules_check(
         self, case_name: str, log: Logger, node: RemoteNode
     ) -> None:
-        hvModules = self.get_modules(node)
-        uname = node.execute("uname -r").stdout
+        hv_modules = self.get_modules(node)
+        uname = node.tools[Uname]
+        kernel_version = uname.get_linux_information().kernel_version_raw
         # TODO: Install dracut
         node.execute("dracut -f", sudo=True)
         node.execute("rm -rf /root/initrd", sudo=True)
         node.execute("mkdir /root/initrd", sudo=True)
-        node.execute(f"cp /boot/initrd-{uname} /root/initrd/boot.img", sudo=True)
+        node.execute(
+            f"cp /boot/initrd-{kernel_version} /root/initrd/boot.img", sudo=True
+        )
         node.execute("cd /root/initrd", sudo=True)
         node.execute(
             "gunzip -c boot.img | cpio -i -d -H newc --no-absolute-filenames",
             shell=True,
             sudo=True,
         )
-        for module in hvModules:
+        for module in hv_modules:
             print(module)
