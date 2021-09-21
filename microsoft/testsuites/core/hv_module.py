@@ -5,7 +5,7 @@ from assertpy import assert_that
 
 from lisa import Logger, RemoteNode, TestCaseMetadata, TestSuite, TestSuiteMetadata
 from lisa.operating_system import CentOs, Redhat
-from lisa.tools import Dmesg, Modinfo, Modprobe, Rpm, Uname, Lsmod
+from lisa.tools import Dmesg, Lsmod, Modinfo, Modprobe, Rpm, Uname
 from lisa.util import SkippedException
 
 
