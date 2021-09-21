@@ -110,9 +110,8 @@ class HvModule(TestSuite):
 
         present_modules = 0
         lsmod = node.tools[Lsmod]
-        output = lsmod.run().stdout
         for module in hv_modules:
-            if module in output:
+            if lsmod.module_exists(module):
                 log.info(f"Module {module} present")
                 present_modules = present_modules + 1
             else:
