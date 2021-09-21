@@ -5,8 +5,8 @@ from assertpy import assert_that
 
 from lisa import Logger, RemoteNode, TestCaseMetadata, TestSuite, TestSuiteMetadata
 from lisa.operating_system import CentOs, Redhat
-from lisa.tools import Lsmod, Modinfo, Modprobe, Rpm, Uname
-from lisa.util import SkippedException, VersionInfo
+from lisa.tools import Dmesg, Modinfo, Modprobe, Rpm, Uname, Lsmod
+from lisa.util import SkippedException
 
 
 @TestSuiteMetadata(
@@ -20,7 +20,18 @@ from lisa.util import SkippedException, VersionInfo
 )
 class HvModule(TestSuite):
     def get_modules(self, node: RemoteNode) -> list[str]:
-        hv_modules = ["hv_storvsc", "hv_netvsc", "hv_vmbus", "hv_utils", "hid_hyperv"]
+        """
+        Returns the hv_modules that are not directly loaded into the kernel.
+        """
+        hv_modules = [
+            "hv_storvsc",
+            "hv_netvsc",
+            "hv_vmbus",
+            "hv_utils",
+            "hid_hyperv",
+            "hv_baloon",
+            "hyperv_keyboard",
+        ]
         uname = node.tools[Uname]
         kernel_version = uname.get_linux_information().kernel_version_raw
         config_path = f"/boot/config-{kernel_version}"
@@ -53,16 +64,20 @@ class HvModule(TestSuite):
             log.info("Distro not supported")
             raise SkippedException
 
-        # TODO: rpm check if LIS is installed
-        # TODO: Check LIS version
+        hv_modules = self.get_modules(node)
         rpm = node.tools[Rpm]
-        print(f"""LIS Installed: {rpm.is_package_installed("microsoft-hyper-v")}""")
+        lis_installed = rpm.is_package_installed("microsoft-hyper-v")
 
-        # hvModules = ["hv_storvsc", "hv_netvsc", "hv_vmbus", "hv_utils", "hid_hyperv"]
-        # modinfo = node.tools[Modinfo]
-        # print("Module versions:")
-        # for module in hvModules:
-        #     print(f"{module}: {modinfo.get_version(module)}")
+        modinfo = node.tools[Modinfo]
+        dmesg = node.tools[Dmesg]
+        lis_version = dmesg.get_lis_version()
+
+        if lis_installed:
+            for module in hv_modules:
+                module_version = modinfo.get_version(module)
+                assert_that(lis_version == module_version).described_as(
+                    f"Version of {module} is {module_version}, expected {lis_version}"
+                ).is_true()
 
     @TestCaseMetadata(
         description="""
@@ -75,21 +90,27 @@ class HvModule(TestSuite):
         hv_modules = self.get_modules(node)
         distro_version = node.os.information.version
 
-        # TODO: Special checks for RHEL and CentOS
-        rpm = node.tools[Rpm]
-        modprobe = node.tools[Modprobe]
-        lis_installed = rpm.is_package_installed("microsoft-hyper-v")
+        if isinstance(node.os, CentOs) or isinstance(node.os, Redhat):
+            rpm = node.tools[Rpm]
+            modprobe = node.tools[Modprobe]
+            lis_installed = rpm.is_package_installed("microsoft-hyper-v")
 
-        if distro_version >= "4.3.0" and lis_installed:
-            hv_modules.append("pci_hyperv")
-            modprobe.run("pci_hyperv", sudo=True)
+            if distro_version >= "4.3.0" and lis_installed:
+                hv_modules.append("pci_hyperv")
+                modprobe.run("pci_hyperv", sudo=True)
 
-        if (distro_version >= "7.3.0" or distro_version < "7.5.0") and lis_installed:
-            hv_modules.append("mlx4_en")
-            modprobe.run("mlx4_en", sudo=True)
+            if (
+                distro_version >= "7.3.0" or distro_version < "7.5.0"
+            ) and lis_installed:
+                dmesg = node.tools[Dmesg]
+                lis_version = dmesg.get_lis_version()
+                if lis_version >= "4.3.0":
+                    hv_modules.append("mlx4_en")
+                    modprobe.run("mlx4_en", sudo=True)
 
         present_modules = 0
-        output = node.execute("lsmod").stdout
+        lsmod = node.tools[Lsmod]
+        output = lsmod.run().stdout
         for module in hv_modules:
             if module in output:
                 log.info(f"Module {module} present")

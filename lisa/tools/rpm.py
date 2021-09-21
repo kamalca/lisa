@@ -11,9 +11,6 @@ class Rpm(Tool):
     def command(self) -> str:
         return self._command
 
-    def _check_exists(self) -> bool:
-        return True
-
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         self._command = "rpm"
 

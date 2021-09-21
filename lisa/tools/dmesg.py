@@ -26,8 +26,8 @@ class Dmesg(Tool):
         r"\[\s+\d+.\d+\]\s+hv_vmbus:.*Vmbus version:(?P<major>\d+).(?P<minor>\d+)"
     )
     __lis_version_pattern = re.compile(
-        r"\[\s+\d+.\d+\].*Vmbus LIS version:\s*"
-        r"(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)"
+        r"\[\s+\d+\.\d+\].*Vmbus LIS version:\s*"
+        r"(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
     )
 
     @property
