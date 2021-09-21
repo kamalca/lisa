@@ -29,7 +29,7 @@ class HvModule(TestSuite):
             "hv_vmbus",
             "hv_utils",
             "hid_hyperv",
-            "hv_baloon",
+            "hv_balloon",
             "hyperv_keyboard",
         ]
         uname = node.tools[Uname]
@@ -46,6 +46,10 @@ class HvModule(TestSuite):
             hv_modules.remove("hv_utils")
         if node.execute(f"grep CONFIG_HID_HYPERV_MOUSE=y {config_path}").exit_code == 0:
             hv_modules.remove("hid_hyperv")
+        if node.execute(f"grep CONFIG_HYPERV_BALLOON=y {config_path}").exit_code == 0:
+            hv_modules.remove("hv_balloon")
+        if node.execute(f"grep CONFIG_HYPERV_KEYBOARD=y {config_path}").exit_code == 0:
+            hv_modules.remove("hyperv_keyboard")
 
         return hv_modules
 
