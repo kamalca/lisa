@@ -20,7 +20,7 @@ from lisa.util import SkippedException
     INITRD-MODULES-CHECK, RELOAD-MODULES-SMP
 
     It is responsible for ensuring the Hyper V drivers are all present,
-    included in initrd, and all the same version.
+    are included in initrd, and are all the same version.
     """,
 )
 class HvModule(TestSuite):
@@ -28,7 +28,8 @@ class HvModule(TestSuite):
         description="""
         This test case will
         1. Verify the list of given LIS kernel modules and verify if the version
-        matches with the Linux kernel release number.
+           matches with the Linux kernel release number. (Drivers loaded directly in
+           to the kernel are skipped)
         """,
         priority=0,
     )
@@ -36,21 +37,18 @@ class HvModule(TestSuite):
         self, case_name: str, log: Logger, node: RemoteNode
     ) -> None:
         if not isinstance(node.os, Redhat):
-            log.info(f"{node.os.name} not supported")
-            raise SkippedException
+            log.info(f"{node.os.name} not supported.")
+            raise SkippedException("This test case only supports Redhat distros.")
 
-        modinfo = node.tools[Modinfo]
         lis_driver = node.tools[LisDriver]
         lis_version = lis_driver.get_version()
         hv_modules = self.__get_modules_not_in_kernel(node)
         lis_installed = node.os.package_exists("microsoft-hyper-v")
 
         if lis_installed:
+            modinfo = node.tools[Modinfo]
             for module in hv_modules:
                 module_version = VersionInfo.parse(modinfo.get_version(module))
-                assert_that(lis_version == module_version).described_as(
-                    f"Version of {module} is {module_version}, expected {lis_version}"
-                ).is_true()
                 assert_that(module_version).described_as(
                     f"Version of {module} does not match LIS version"
                 ).is_equal_to(lis_version)
@@ -58,7 +56,8 @@ class HvModule(TestSuite):
     @TestCaseMetadata(
         description="""
         This test case will
-        1. Verify the presence of all LIS modules
+        1. Verify the presence of all Hyper V drivers using lsmod
+           to look for the drivers not directly loaded into the kernel.
         """,
         priority=0,
     )
@@ -68,6 +67,8 @@ class HvModule(TestSuite):
         hv_modules = self.__get_modules_not_in_kernel(node)
         distro_version = node.os.information.version
 
+        # Some versions of RHEL and CentOS have the LIS package installed
+        #   which includes extra drivers
         if isinstance(node.os, Redhat):
             modprobe = node.tools[Modprobe]
             lis_installed = node.os.package_exists("microsoft-hyper-v")
@@ -82,6 +83,7 @@ class HvModule(TestSuite):
                 hv_modules.append("mlx4_en")
                 modprobe.run("mlx4_en", sudo=True)
 
+        # Counts the Hyper V drivers loaded as modules
         num_modules_loaded = 0
         lsmod = node.tools[Lsmod]
         for module in hv_modules:
