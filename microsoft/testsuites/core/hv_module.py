@@ -145,13 +145,14 @@ class HvModule(TestSuite):
         kernel_version = uname.get_linux_information().kernel_version_raw
         config_path = f"/boot/config-{kernel_version}"
 
+        modules = []
         for module in hv_modules_configuration:
             if (
                 node.execute(
                     f"grep {hv_modules_configuration[module]}=y {config_path}"
                 ).exit_code
-                == 0
+                != 0
             ):
-                hv_modules_configuration.pop(module)
+                modules.append(module)
 
-        return [*hv_modules_configuration]
+        return modules
