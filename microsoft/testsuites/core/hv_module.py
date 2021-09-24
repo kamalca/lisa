@@ -42,7 +42,7 @@ class HvModule(TestSuite):
 
         lis_driver = node.tools[LisDriver]
         lis_version = lis_driver.get_version()
-        hv_modules = self.__get_modules_not_in_kernel(node)
+        hv_modules = self.__get_expected_modules(node)
         lis_installed = node.os.package_exists("microsoft-hyper-v")
 
         if lis_installed:
@@ -64,7 +64,7 @@ class HvModule(TestSuite):
     def verify_hyperv_modules(
         self, case_name: str, log: Logger, node: RemoteNode
     ) -> None:
-        hv_modules = self.__get_modules_not_in_kernel(node)
+        hv_modules = self.__get_expected_modules(node)
         distro_version = node.os.information.version
 
         # Some versions of RHEL and CentOS have the LIS package installed
@@ -109,7 +109,7 @@ class HvModule(TestSuite):
     def initrd_modules_check(
         self, case_name: str, log: Logger, node: RemoteNode
     ) -> None:
-        hv_modules = self.__get_modules_not_in_kernel(node)
+        hv_modules = self.__get_expected_modules(node)
         uname = node.tools[Uname]
         kernel_version = uname.get_linux_information().kernel_version_raw
         # TODO: Install dracut
@@ -128,9 +128,10 @@ class HvModule(TestSuite):
         for module in hv_modules:
             print(module)
 
-    def __get_modules_not_in_kernel(self, node: RemoteNode) -> list[str]:
+    def __get_expected_modules(self, node: RemoteNode) -> list[str]:
         """
-        Returns the hv_modules that are not directly loaded into the kernel.
+        Returns the hv_modules that are not directly loaded into the kernel and
+        therefore would be expected to show up in lsmod.
         """
         hv_modules_configuration = {
             "hv_storvsc": "CONFIG_HYPERV_STORAGE",
