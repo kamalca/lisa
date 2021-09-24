@@ -37,21 +37,26 @@ class HvModule(TestSuite):
         self, case_name: str, log: Logger, node: RemoteNode
     ) -> None:
         if not isinstance(node.os, Redhat):
-            log.info(f"{node.os.name} not supported.")
-            raise SkippedException("This test case only supports Redhat distros.")
+            raise SkippedException(
+                f"{node.os.name} not supported. "
+                "This test case only supports Redhat distros."
+            )
 
-        lis_driver = node.tools[LisDriver]
-        lis_version = lis_driver.get_version()
-        hv_modules = self.__get_expected_modules(node)
         lis_installed = node.os.package_exists("microsoft-hyper-v")
 
-        if lis_installed:
-            modinfo = node.tools[Modinfo]
-            for module in hv_modules:
-                module_version = VersionInfo.parse(modinfo.get_version(module))
-                assert_that(module_version).described_as(
-                    f"Version of {module} does not match LIS version"
-                ).is_equal_to(lis_version)
+        if not lis_installed:
+            raise SkippedException("This test case requires LIS to be installed")
+
+        modinfo = node.tools[Modinfo]
+        lis_driver = node.tools[LisDriver]
+        lis_version = lis_driver.get_version()
+
+        hv_modules = self.__get_expected_modules(node)
+        for module in hv_modules:
+            module_version = VersionInfo.parse(modinfo.get_version(module))
+            assert_that(module_version).described_as(
+                f"Version of {module} does not match LIS version"
+            ).is_equal_to(lis_version)
 
     @TestCaseMetadata(
         description="""
