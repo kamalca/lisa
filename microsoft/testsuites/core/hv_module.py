@@ -31,7 +31,7 @@ class HvModule(TestSuite):
            matches with the Linux kernel release number. (Drivers loaded directly in
            to the kernel are skipped)
         """,
-        priority=0,
+        priority=1,
     )
     def verify_lis_modules_version(
         self, case_name: str, log: Logger, node: RemoteNode
@@ -64,7 +64,7 @@ class HvModule(TestSuite):
         1. Verify the presence of all Hyper V drivers using lsmod
            to look for the drivers not directly loaded into the kernel.
         """,
-        priority=0,
+        priority=1,
     )
     def verify_hyperv_modules(
         self, case_name: str, log: Logger, node: RemoteNode
@@ -109,7 +109,7 @@ class HvModule(TestSuite):
         1. Verify the list of given LIS kernel modules and verify if the version
         matches with the Linux kernel release number.
         """,
-        priority=0,
+        priority=1,
     )
     def initrd_modules_check(
         self, case_name: str, log: Logger, node: RemoteNode
