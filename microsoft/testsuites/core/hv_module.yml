@@ -5,4 +5,4 @@ extension:
   - .
 testcase:
   - criteria:
-      name: lis_modules_check
+      name: verify_hyperv_modules
