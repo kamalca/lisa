@@ -89,19 +89,19 @@ class HvModule(TestSuite):
                 modprobe.run("mlx4_en", sudo=True)
 
         # Counts the Hyper V drivers loaded as modules
-        num_modules_loaded = 0
+        missing_modules = []
         lsmod = node.tools[Lsmod]
         for module in hv_modules:
             if lsmod.module_exists(module):
                 log.info(f"Module {module} present")
-                num_modules_loaded = num_modules_loaded + 1
             else:
                 log.error(f"Module {module} absent")
+                missing_modules.append(module)
 
         num_modules_expected = len(hv_modules)
-        assert_that(num_modules_loaded).described_as(
+        assert_that(missing_modules).described_as(
             "Not all Hyper V drivers are present."
-        ).is_equal_to(num_modules_expected)
+        ).is_length(0)
 
     @TestCaseMetadata(
         description="""
