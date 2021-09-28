@@ -7,7 +7,7 @@ from semver import VersionInfo
 from lisa import Logger, RemoteNode, TestCaseMetadata, TestSuite, TestSuiteMetadata
 from lisa.operating_system import Redhat
 from lisa.sut_orchestrator.azure.tools import LisDriver
-from lisa.tools import Lsmod, Modinfo, Modprobe, Uname
+from lisa.tools import Find, Lsmod, Modinfo, Modprobe, Uname
 from lisa.util import SkippedException
 
 
@@ -98,7 +98,6 @@ class HvModule(TestSuite):
                 log.error(f"Module {module} absent")
                 missing_modules.append(module)
 
-        num_modules_expected = len(hv_modules)
         assert_that(missing_modules).described_as(
             "Not all Hyper V drivers are present."
         ).is_length(0)
@@ -114,24 +113,39 @@ class HvModule(TestSuite):
     def initrd_modules_check(
         self, case_name: str, log: Logger, node: RemoteNode
     ) -> None:
+        hv_modules_file_names = {
+            "hv_storvsc": "hv_storvsc.ko",
+            "hv_netvsc": "hv_netvsc.ko",
+            "hv_vmbus": "hv_vmbus.ko",
+            # "hv_utils": "",
+            "hid_hyperv": "hid-hyperv.ko",
+            # "hv_balloon": "",
+            "hyperv_keyboard": "hyperv-keyboard.ko",
+        }
         hv_modules = self._get_expected_modules(node)
         uname = node.tools[Uname]
         kernel_version = uname.get_linux_information().kernel_version_raw
-        # TODO: Install dracut
-        node.execute("dracut -f", sudo=True)
-        node.execute("rm -rf /root/initrd", sudo=True)
-        node.execute("mkdir /root/initrd", sudo=True)
-        node.execute(
-            f"cp /boot/initrd-{kernel_version} /root/initrd/boot.img", sudo=True
+        find = node.tools[Find]
+
+        initrd_possible_file_names = [
+            f"initrd-{kernel_version}",
+            f"initramfs-{kernel_version}.img",
+            f"initrd.img-{kernel_version}",
+        ]
+
+        for file_name in initrd_possible_file_names:
+            if find.find_files(node.get_pure_path("/boot"), file_name, sudo=True):
+                print(f"/boot/{file_name}")
+                break
+
+        result = node.execute(
+            f"lsinitrd -f usr/lib/modules/{kernel_version}/modules.dep", sudo=True
         )
-        node.execute("cd /root/initrd", sudo=True)
-        node.execute(
-            "gunzip -c boot.img | cpio -i -d -H newc --no-absolute-filenames",
-            shell=True,
-            sudo=True,
-        )
-        for module in hv_modules:
-            print(module)
+        for module in hv_modules_file_names:
+            print(
+                f"{hv_modules_file_names[module] in result.stdout} "
+                f"{hv_modules_file_names[module]}"
+            )
 
     def _get_expected_modules(self, node: RemoteNode) -> list[str]:
         """
