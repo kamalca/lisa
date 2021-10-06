@@ -7,7 +7,7 @@ from semver import VersionInfo
 from lisa import Logger, RemoteNode, TestCaseMetadata, TestSuite, TestSuiteMetadata
 from lisa.operating_system import Redhat
 from lisa.sut_orchestrator.azure.tools import LisDriver
-from lisa.tools import Find, Lsmod, Modinfo, Modprobe, Uname
+from lisa.tools import Find, Lsinitrd, Lsmod, Modinfo, Modprobe, Uname
 from lisa.util import SkippedException
 
 
@@ -51,7 +51,20 @@ class HvModule(TestSuite):
         lis_driver = node.tools[LisDriver]
         lis_version = lis_driver.get_version()
 
-        hv_modules = self._get_expected_modules(node)
+        # Take all the necessary modules and skip the ones that
+        # are statically loaded into the kernel,
+        # because only the version of modules is relevant
+        all_hv_modules = [
+            "hv_storvsc",
+            "hv_netvsc",
+            "hv_vmbus",
+            "hv_utils",
+            "hid_hyperv",
+            "hv_balloon",
+            "hyperv_keyboard",
+        ]
+        skip_modules = self._get_directly_loaded_modules(node)
+        hv_modules = [module for module in all_hv_modules if module not in skip_modules]
         for module in hv_modules:
             module_version = VersionInfo.parse(modinfo.get_version(module))
             assert_that(module_version).described_as(
@@ -69,11 +82,25 @@ class HvModule(TestSuite):
     def verify_hyperv_modules(
         self, case_name: str, log: Logger, node: RemoteNode
     ) -> None:
-        hv_modules = self._get_expected_modules(node)
+        # Take all the necessary modules and skip the ones that
+        # are statically loaded into the kernel,
+        # because they will not show up in lsmod
+        all_hv_modules = [
+            "hv_storvsc",
+            "hv_netvsc",
+            "hv_vmbus",
+            "hv_utils",
+            "hid_hyperv",
+            "hv_balloon",
+            "hyperv_keyboard",
+        ]
+        skip_modules = self._get_directly_loaded_modules(node)
+        hv_modules = [module for module in all_hv_modules if module not in skip_modules]
+
         distro_version = node.os.information.version
 
         # Some versions of RHEL and CentOS have the LIS package installed
-        #   which includes extra drivers
+        #   which includes extra drivers.
         if isinstance(node.os, Redhat):
             modprobe = node.tools[Modprobe]
             lis_installed = node.os.package_exists("microsoft-hyper-v")
@@ -82,13 +109,11 @@ class HvModule(TestSuite):
                 hv_modules.append("pci_hyperv")
                 modprobe.run("pci_hyperv", sudo=True)
 
-            if (
-                distro_version >= "7.3.0" or distro_version < "7.5.0"
-            ) and lis_installed:
+            if lis_installed and distro_version >= "7.3.0" and distro_version < "7.5.0":
                 hv_modules.append("mlx4_en")
                 modprobe.run("mlx4_en", sudo=True)
 
-        # Counts the Hyper V drivers loaded as modules
+        # Verify modules are present
         missing_modules = []
         lsmod = node.tools[Lsmod]
         for module in hv_modules:
@@ -104,48 +129,65 @@ class HvModule(TestSuite):
 
     @TestCaseMetadata(
         description="""
-        This test case will
-        1. Verify the list of given LIS kernel modules and verify if the version
-        matches with the Linux kernel release number.
+        This test case will ensure all necessary hv_modules are present in
+        initrd. This is achieved by
+        1. Skipping any modules that are loaded directly in the kernel
+        2. Find the path of initrd file
+        3. Use lsinitrd tool to check whether a necessary module is missing
         """,
-        priority=1,
+        priority=2,
     )
-    def initrd_modules_check(
+    def verify_initrd_modules(
         self, case_name: str, log: Logger, node: RemoteNode
     ) -> None:
-        hv_modules_file_names = {
+
+        # 1) Takes all of the necessary modules and removes
+        #    those that are statically loaded into the kernel
+        all_necessary_hv_modules_file_names = {
             "hv_storvsc": "hv_storvsc.ko",
             "hv_netvsc": "hv_netvsc.ko",
             "hv_vmbus": "hv_vmbus.ko",
-            # "hv_utils": "",
             "hid_hyperv": "hid-hyperv.ko",
-            # "hv_balloon": "",
             "hyperv_keyboard": "hyperv-keyboard.ko",
         }
-        hv_modules = self._get_expected_modules(node)
+        skip_modules = self._get_directly_loaded_modules(node)
+        hv_modules_file_names = {
+            k: v
+            for (k, v) in all_necessary_hv_modules_file_names.items()
+            if k not in skip_modules
+        }
+
+        # 2) Find the path of initrd
         uname = node.tools[Uname]
         kernel_version = uname.get_linux_information().kernel_version_raw
         find = node.tools[Find]
-
         initrd_possible_file_names = [
             f"initrd-{kernel_version}",
             f"initramfs-{kernel_version}.img",
             f"initrd.img-{kernel_version}",
         ]
 
+        initrd_file_path = ""
         for file_name in initrd_possible_file_names:
-            if find.find_files(node.get_pure_path("/boot"), file_name, sudo=True):
-                print(f"/boot/{file_name}")
+            result = find.find_files(node.get_pure_path("/boot"), file_name, sudo=True)
+            if result and result[0]:
+                initrd_file_path = result[0]
                 break
 
-        result = node.execute(
-            f"lsinitrd -f usr/lib/modules/{kernel_version}/modules.dep", sudo=True
-        )
+        # 3) Use lsinitrd to check whether a necessary module
+        #    is missing.
+        lsinitrd = node.tools[Lsinitrd]
+        missing_modules = []
         for module in hv_modules_file_names:
-            print(
-                f"{hv_modules_file_names[module] in result.stdout} "
-                f"{hv_modules_file_names[module]}"
-            )
+            if not lsinitrd.module_is_present(
+                module_file_name=hv_modules_file_names[module],
+                initrd_file_path=initrd_file_path,
+            ):
+                missing_modules.append(module)
+
+        assert_that(missing_modules).described_as(
+            "Some modules are missing from initrd."
+        ).is_length(0)
 
     def _get_expected_modules(self, node: RemoteNode) -> list[str]:
         """
@@ -172,6 +214,36 @@ class HvModule(TestSuite):
                     f"grep ^{hv_modules_configuration[module]}=y {config_path}"
                 ).exit_code
                 != 0
+            ):
+                modules.append(module)
+
+        return modules
+
+    def _get_directly_loaded_modules(self, node: RemoteNode) -> list[str]:
+        """
+        Returns the hv_modules that are directly loaded into the kernel and
+        therefore would not show up in lsmod or be needed in initrd.
+        """
+        hv_modules_configuration = {
+            "hv_storvsc": "CONFIG_HYPERV_STORAGE",
+            "hv_netvsc": "CONFIG_HYPERV_NET",
+            "hv_vmbus": "CONFIG_HYPERV",
+            "hv_utils": "CONFIG_HYPERV_UTILS",
+            "hid_hyperv": "CONFIG_HID_HYPERV_MOUSE",
+            "hv_balloon": "CONFIG_HYPERV_BALLOON",
+            "hyperv_keyboard": "CONFIG_HYPERV_KEYBOARD",
+        }
+        uname = node.tools[Uname]
+        kernel_version = uname.get_linux_information().kernel_version_raw
+        config_path = f"/boot/config-{kernel_version}"
+
+        modules = []
+        for module in hv_modules_configuration:
+            if (
+                node.execute(
+                    f"grep ^{hv_modules_configuration[module]}=y {config_path}"
+                ).exit_code
+                == 0
             ):
                 modules.append(module)
 
