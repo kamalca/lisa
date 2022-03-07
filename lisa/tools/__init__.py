@@ -18,7 +18,7 @@ from .ethtool import Ethtool
 from .fdisk import Fdisk
 from .find import Find
 from .fio import FIOMODES, Fio, FIOResult
-from .firewall import Firewall
+from .firewall import Firewall, Iptables
 from .gcc import Gcc
 from .git import Git
 from .hwclock import Hwclock
@@ -55,6 +55,7 @@ from .pgrep import Pgrep, ProcessInfo
 from .ping import Ping
 from .python import Pip, Python
 from .qemu import Qemu
+from .qemu_img import QemuImg
 from .reboot import Reboot
 from .sar import Sar
 from .service import Service
@@ -67,6 +68,7 @@ from .tar import Tar
 from .taskset import TaskSet
 from .tcpdump import TcpDump
 from .timedatectl import Timedatectl
+from .unzip import Unzip
 from .uptime import Uptime
 from .who import Who
 from .whoami import Whoami
@@ -97,6 +99,7 @@ __all__ = [
     "Iperf3",
     "Hwclock",
     "InterruptInspector",
+    "Iptables",
     "KdumpBase",
     "Kill",
     "Lagscope",
@@ -132,6 +135,7 @@ __all__ = [
     "ProcessInfo",
     "Python",
     "Qemu",
+    "QemuImg",
     "Reboot",
     "Sar",
     "Sed",
@@ -146,6 +150,7 @@ __all__ = [
     "TaskSet",
     "TcpDump",
     "Timedatectl",
+    "Unzip",
     "Uptime",
     "Wget",
     "Who",
